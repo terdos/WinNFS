@@ -52,7 +52,26 @@ namespace Terdos.WinNFS
             return result;
         }
 
+        private void Debug(string format, params object[] args)
+        {
+#if TRACE
+            Console.Error.WriteLine("NFS: " + format, args);
+            System.Diagnostics.Debug.WriteLine(string.Format("NFS: " + format, args));
+#endif
+        }
+
+
         #endregion
+
+        string CleanFileName(string filename)
+        {
+            int columnIndex = filename.IndexOf(":");
+            if (columnIndex == -1)
+                return filename;
+
+            return filename.Substring(0, columnIndex);
+        }
+
 
         public NFSProxy(System.Net.IPAddress address)
         {
@@ -87,6 +106,7 @@ namespace Terdos.WinNFS
         void IDokanOperations.Cleanup(string fileName, DokanFileInfo info)
         {
             Console.WriteLine("Cleanup");
+            nfsClient.CompleteIO();
             //throw new NotImplementedException();
         }
 
@@ -98,138 +118,83 @@ namespace Terdos.WinNFS
 
         NtStatus IDokanOperations.CreateFile(string fileName, DokanNet.FileAccess access, FileShare share, FileMode mode, FileOptions options, FileAttributes attributes, DokanFileInfo info)
         {
-            //fileName = "/home" + fileName.Replace('\\', '/');
-            //fileName = "\\terdos\\";
-            if (info.IsDirectory)
+            fileName = CleanFileName(fileName);
+
+            try
             {
-                try
-                {
-                    switch (mode)
-                    {
-                        case FileMode.Open:
-                            if (fileName != "\\" && nfsClient.FileExists(fileName) && !nfsClient.IsDirectory(fileName))
-                            {
-                                try
-                                {
-                                    if(nfsClient.FileExists(fileName))
-                                        return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, NtStatus.Unsuccessful);
-                                }
-                                catch (Exception)
-                                {
-                                    return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.FileNotFound);
-                                }
-                                return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.PathNotFound);
-                            }
+                Debug("CreateFile {0}", fileName);
 
-                            //new DirectoryInfo(path).EnumerateFileSystemInfos().Any(); // you can't list the directory
-                            break;
-
-                        case FileMode.CreateNew:
-                            if (nfsClient.FileExists(fileName))
-                                return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.FileExists);
-
-                            try
-                            {
-                                //File.GetAttributes(path).HasFlag(FileAttributes.Directory);
-                                return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.AlreadyExists);
-                            }
-                            catch (IOException) { }
-
-                            nfsClient.CreateDirectory(fileName);
-                            break;
-                    }
-                }
-                catch (Exception e)
-                {
-                    return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.AccessDenied);
-                }
-            }
-            else
-            {
-                bool pathExists = true;
-                bool pathIsDirectory = false;
-
-                bool readWriteAttributes = (access & DokanNet.FileAccess.ReadData) == 0;
-                bool readAccess = (access & DokanNet.FileAccess.WriteData) == 0;
-
-                try
-                {
-                    pathExists = (nfsClient.FileExists(fileName) || nfsClient.IsDirectory(fileName) );
-                    pathIsDirectory = nfsClient.IsDirectory(fileName);
-                }
-                catch (Exception e) { }
+                string Directory = nfsClient.GetDirectoryName(fileName);
+                string FileName = nfsClient.GetFileName(fileName);
+                string FullPath = nfsClient.Combine(FileName, Directory);
+                
+                if (nfsClient.IsDirectory(FullPath))
+                    return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.Success);
 
                 switch (mode)
                 {
                     case FileMode.Open:
-
-                        if (pathExists)
                         {
-                            if (readWriteAttributes || pathIsDirectory)
-                            // check if driver only wants to read attributes, security info, or open directory
-                            {
-                                if (pathIsDirectory && (access & DokanNet.FileAccess.Delete) == DokanNet.FileAccess.Delete
-                                    && (access & DokanNet.FileAccess.Synchronize) != DokanNet.FileAccess.Synchronize) //It is a DeleteFile request on a directory
-                                    return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.AccessDenied);
-
-                                info.IsDirectory = pathIsDirectory;
-                                info.Context = new object();
-                                // must set it to someting if you return DokanError.Success
-
-                                return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.Success);
-                            }
+                            Debug("Open");
+                            if (!nfsClient.FileExists(FullPath))
+                                return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.FileNotFound);
+                            break;
                         }
-                        else
-                        {
-                            return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.FileNotFound);
-                        }
-                        break;
-
                     case FileMode.CreateNew:
-                        if (pathExists)
-                            return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.FileExists);
-                        break;
+                        {
+                            Debug("CreateNew");
+                            if (nfsClient.FileExists(FullPath))
+                                return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.AlreadyExists);
+                            else
+                                if (info.IsDirectory)
+                                    nfsClient.CreateDirectory(FullPath);
+                                else
+                                    nfsClient.CreateFile(FullPath);
+                            break;
+                        }
+                    case FileMode.Create:
+                        {
+                            Debug("Create");
+                            if (nfsClient.FileExists(FullPath))
+                                nfsClient.DeleteFile(FullPath);
 
+                            nfsClient.CreateFile(FullPath);
+                            break;
+                        }
+                    case FileMode.OpenOrCreate:
+                        {
+                            Debug("OpenOrCreate");
+                            if (!nfsClient.FileExists(FullPath))
+                                nfsClient.CreateFile(FullPath);
+                            break;
+                        }
                     case FileMode.Truncate:
-                        if (!pathExists)
-                            return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.FileNotFound);
-                        break;
-
+                        {
+                            Debug("Truncate");
+                            if (!nfsClient.FileExists(FullPath))
+                                return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.FileNotFound);
+                            else
+                                nfsClient.CreateFile(FullPath);
+                            break;
+                        }
+                    case FileMode.Append:
+                        {
+                            Debug("Append");
+                            if (!nfsClient.FileExists(FullPath))
+                                return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.FileNotFound);
+                            break;
+                        }
                     default:
-                        break;
+                        {
+                            Debug("Error unknown FileMode {0}", mode);
+                            break;
+                        }
                 }
-
-                try
-                {
-                    nfsClient.CreateFile(fileName);
-                    /*
-                    info.Context = new FileStream(path, mode, readAccess ? System.IO.FileAccess.Read : System.IO.FileAccess.ReadWrite, share, 4096, options);
-
-                    if (mode == FileMode.CreateNew
-                        || mode == FileMode.Create) //Files are always created as Archive
-                        attributes |= FileAttributes.Archive;
-                    File.SetAttributes(path, attributes);
-                    */
-                }
-                catch (UnauthorizedAccessException) // don't have access rights
-                {
-                    return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.AccessDenied);
-                }
-                catch (DirectoryNotFoundException)
-                {
-                    return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.PathNotFound);
-                }
-                catch (Exception ex)
-                {
-                    uint hr = (uint)Marshal.GetHRForException(ex);
-                    switch (hr)
-                    {
-                        case 0x80070020: //Sharing violation
-                            return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.SharingViolation);
-                        default:
-                            throw ex;
-                    }
-                }
+            }
+            catch (Exception ex)
+            {
+                Debug("CreateFile file {0} exception {1}", fileName, ex.Message);
+                return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.Error);
             }
             return Trace("CreateFile", fileName, info, access, share, mode, options, attributes, DokanResult.Success);
         }
@@ -251,9 +216,41 @@ namespace Terdos.WinNFS
         NtStatus IDokanOperations.FindFiles(string fileName, out IList<FileInformation> files, DokanFileInfo info)
         {
             Console.WriteLine("FindFiles");
+
+            fileName = CleanFileName(fileName);
             files = new List<FileInformation>();
-            return NtStatus.Success;
-            //throw new NotImplementedException();
+
+            try
+            {
+                Debug("FindFiles {0}", fileName);
+                string Directory = nfsClient.GetDirectoryName(fileName);
+                string FileName = nfsClient.GetFileName(fileName);
+                string FullPath = nfsClient.Combine(FileName, Directory);
+
+                foreach (string strItem in nfsClient.GetItemList(FullPath))
+                {
+                    Debug("Found: {0}", strItem);
+                    NFSLibrary.Protocols.Commons.NFSAttributes nfsAttributes = nfsClient.GetItemAttributes(nfsClient.Combine(strItem, FullPath));
+                    if (nfsAttributes != null)
+                    {
+                        FileInformation fi = new FileInformation();
+                        fi.Attributes = nfsAttributes.NFSType == NFSLibrary.Protocols.Commons.NFSItemTypes.NFDIR ? System.IO.FileAttributes.Directory : System.IO.FileAttributes.Normal;
+                        fi.CreationTime = nfsAttributes.CreateDateTime;
+                        fi.LastAccessTime = nfsAttributes.LastAccessedDateTime;
+                        fi.LastWriteTime = nfsAttributes.ModifiedDateTime;
+                        fi.Length = (long)nfsAttributes.Size;
+                        fi.FileName = strItem;
+                        files.Add(fi);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {                
+                Debug("FindFiles file {0} exception {1}", fileName, ex.Message);
+                return Trace("FindFiles", fileName, info, DokanResult.Error);
+            }
+
+            return Trace("FindFiles", fileName, info, DokanResult.Success);
         }
 
         NtStatus IDokanOperations.FindStreams(string fileName, out IList<FileInformation> streams, DokanFileInfo info)
@@ -284,61 +281,39 @@ namespace Terdos.WinNFS
 
         NtStatus IDokanOperations.GetFileInformation(string fileName, out FileInformation fileInfo, DokanFileInfo info)
         {
-            
-            Console.WriteLine("GetFileInformation");
+            fileName = CleanFileName(fileName);
             fileInfo = new FileInformation();
-            /*
-            Console.WriteLine(fileName);
+
             try
             {
-                Console.WriteLine("one");
-                if (nfsClient.FileExists(fileName))
-                {
-                    Console.WriteLine("two");
-                    if (fileName == "\\" || nfsClient.IsDirectory(fileName))
-                    {
-                        FileName = fileName,
-                        Attributes = finfo.Attributes,
-                        CreationTime = finfo.CreationTime,
-                        LastAccessTime = finfo.LastAccessTime,
-                        LastWriteTime = finfo.LastWriteTime,
-                        Length = (finfo is FileInfo) ? ((FileInfo)finfo).Length : 0,
+                Debug("GetFileInformation {0}", fileName);
+                string Directory = nfsClient.GetDirectoryName(fileName);
+                string FileName = nfsClient.GetFileName(fileName);
+                string FullPath = nfsClient.Combine(FileName, Directory);
 
-                        Console.WriteLine("Is Directory");
-                    }
-                    else
-                    {
-                        Console.WriteLine("FileExists");
-                    }
-                }
+                NFSLibrary.Protocols.Commons.NFSAttributes nfsAttributes = nfsClient.GetItemAttributes(FullPath);
+                if (nfsAttributes == null)
+                    return Trace("GetFileInformation", fileName, info, DokanResult.Error);
+
+                if (nfsAttributes.NFSType == NFSLibrary.Protocols.Commons.NFSItemTypes.NFDIR)
+                    fileInfo.Attributes = System.IO.FileAttributes.Directory;
                 else
-                {
-                    Console.WriteLine("File Not Exists");
-                }*/
-                /*
-                FileSystemInfo finfo = new FileInfo(path);
-                if (!finfo.Exists)
-                    finfo = new DirectoryInfo(path);
+                    fileInfo.Attributes = System.IO.FileAttributes.Archive;
 
-                fileInfo = new FileInformation
-                {
-                    FileName = fileName,
-                    Attributes = finfo.Attributes,
-                    CreationTime = finfo.CreationTime,
-                    LastAccessTime = finfo.LastAccessTime,
-                    LastWriteTime = finfo.LastWriteTime,
-                    Length = (finfo is FileInfo) ? ((FileInfo)finfo).Length : 0,
-                };
-                return Trace("GetFileInformation", fileName, info, DokanResult.Success);
-                */
-           /* }
-            catch (Exception e)
+                fileInfo.LastAccessTime = nfsAttributes.LastAccessedDateTime;
+                fileInfo.LastWriteTime = nfsAttributes.ModifiedDateTime;
+                fileInfo.CreationTime = nfsAttributes.CreateDateTime;
+                fileInfo.Length = (long)nfsAttributes.Size;
+                fileInfo.FileName = FileName;
+                Debug("GetFileInformation {0},{1},{2}", fileInfo.FileName, fileInfo.Length, fileInfo.Attributes);
+            }
+            catch (Exception ex)
             {
-                Console.WriteLine(e.Message);
-            }*/
-            return NtStatus.Success;
-            //throw new NotImplementedException();
+                Debug("GetFileInformation file {0} exception {1}", fileName, ex.Message);
+                return Trace("GetFileInformation", fileName, info, DokanResult.Error);
+            }
 
+            return Trace("GetFileInformation", fileName, info, DokanResult.Success);
         }
 
         NtStatus IDokanOperations.GetFileSecurity(string fileName, out FileSystemSecurity security, AccessControlSections sections, DokanFileInfo info)
@@ -352,11 +327,14 @@ namespace Terdos.WinNFS
         NtStatus IDokanOperations.GetVolumeInformation(out string volumeLabel, out FileSystemFeatures features, out string fileSystemName, DokanFileInfo info)
         {
             Console.WriteLine("GetVolumeInformation");
-            volumeLabel = "cheese";
-            features = FileSystemFeatures.ReadOnlyVolume;
-            fileSystemName = "FileSystem";
-            return NtStatus.Success;
-            //throw new NotImplementedException();
+            volumeLabel = "DOKAN";
+            fileSystemName = "NTFS";
+
+            features = FileSystemFeatures.CasePreservedNames | FileSystemFeatures.CaseSensitiveSearch |
+                       FileSystemFeatures.PersistentAcls | FileSystemFeatures.SupportsRemoteStorage |
+                       FileSystemFeatures.UnicodeOnDisk;
+
+            return Trace("GetVolumeInformation", null, info, DokanResult.Success, "out " + volumeLabel, "out " + features.ToString(), "out " + fileSystemName);
 
         }
 
