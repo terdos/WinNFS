@@ -76,7 +76,7 @@ namespace Terdos.WinNFS
         public NFSProxy(System.Net.IPAddress address)
         {
             nfsClient = new NFSClient(NFSClient.NFSVersion.v3);
-            nfsClient.Connect(address, 1001,1001,600000);
+            nfsClient.Connect(address, 500,500,600000);
         }
 
         public List<String> GetExportedDevices()
@@ -105,14 +105,14 @@ namespace Terdos.WinNFS
 
         void IDokanOperations.Cleanup(string fileName, DokanFileInfo info)
         {
-            Console.WriteLine("Cleanup");
+            Debug("Cleanup");
             nfsClient.CompleteIO();
             //throw new NotImplementedException();
         }
 
         void IDokanOperations.CloseFile(string fileName, DokanFileInfo info)
         {
-            Console.WriteLine("CloseFile");
+            Debug("CloseFile");
             //throw new NotImplementedException();
         }
 
@@ -201,7 +201,7 @@ namespace Terdos.WinNFS
 
         NtStatus IDokanOperations.DeleteDirectory(string fileName, DokanFileInfo info)
         {
-            Console.WriteLine("DeleteDirectory");
+            Debug("DeleteDirectory");
 
             fileName = CleanFileName(fileName);
 
@@ -224,7 +224,7 @@ namespace Terdos.WinNFS
 
         NtStatus IDokanOperations.DeleteFile(string fileName, DokanFileInfo info)
         {
-            Console.WriteLine("DeleteFile");
+            Debug("DeleteFile");
 
             fileName = CleanFileName(fileName);
 
@@ -255,7 +255,7 @@ namespace Terdos.WinNFS
 
         NtStatus IDokanOperations.FindFiles(string fileName, out IList<FileInformation> files, DokanFileInfo info)
         {
-            Console.WriteLine("FindFiles");
+            Debug("FindFiles");
 
             fileName = CleanFileName(fileName);
             files = new List<FileInformation>();
@@ -295,7 +295,7 @@ namespace Terdos.WinNFS
 
         NtStatus IDokanOperations.FindStreams(string fileName, out IList<FileInformation> streams, DokanFileInfo info)
         {
-            Console.WriteLine("FindStreams");
+            Debug("FindStreams");
             streams = new List<FileInformation>();
             return NtStatus.Success;
             //throw new NotImplementedException();
@@ -303,7 +303,7 @@ namespace Terdos.WinNFS
 
         NtStatus IDokanOperations.FlushFileBuffers(string fileName, DokanFileInfo info)
         {
-            Console.WriteLine("FlushFileBuffers");
+            Debug("FlushFileBuffers");
             return NtStatus.Success;
             //throw new NotImplementedException();
 
@@ -311,7 +311,7 @@ namespace Terdos.WinNFS
 
         NtStatus IDokanOperations.GetDiskFreeSpace(out long freeBytesAvailable, out long totalNumberOfBytes, out long totalNumberOfFreeBytes, DokanFileInfo info)
         {
-            Console.WriteLine("GetDiskFreeSpace");
+            Debug("GetDiskFreeSpace");
             freeBytesAvailable = 1024L * 1024 * 1024 * 10;
             totalNumberOfBytes = 1024L * 1024 * 1024 * 20;
             totalNumberOfFreeBytes = 1024L * 1024 * 1024 * 10;
@@ -357,7 +357,7 @@ namespace Terdos.WinNFS
 
         NtStatus IDokanOperations.GetFileSecurity(string fileName, out FileSystemSecurity security, AccessControlSections sections, DokanFileInfo info)
         {
-            Console.WriteLine("GetFileSecurity");
+            Debug("GetFileSecurity");
             security = null;
             return NtStatus.Success;
             //throw new NotImplementedException();
@@ -365,7 +365,7 @@ namespace Terdos.WinNFS
 
         NtStatus IDokanOperations.GetVolumeInformation(out string volumeLabel, out FileSystemFeatures features, out string fileSystemName, DokanFileInfo info)
         {
-            Console.WriteLine("GetVolumeInformation");
+            Debug("GetVolumeInformation");
             volumeLabel = "DOKAN";
             fileSystemName = "NTFS";
 
@@ -379,7 +379,7 @@ namespace Terdos.WinNFS
 
         NtStatus IDokanOperations.LockFile(string fileName, long offset, long length, DokanFileInfo info)
         {
-            Console.WriteLine("LockFile");
+            Debug("LockFile");
             return NtStatus.Success;
             //throw new NotImplementedException();
 
@@ -387,16 +387,7 @@ namespace Terdos.WinNFS
 
         NtStatus IDokanOperations.Mounted(DokanFileInfo info)
         {
-            Console.WriteLine("Mounted");
-            Console.WriteLine(info.Context);
-            Console.WriteLine(info.DeleteOnClose);
-            Console.WriteLine(info.IsDirectory);
-            Console.WriteLine(info.NoCache);
-            Console.WriteLine(info.PagingIo);
-            Console.WriteLine(info.ProcessId);
-            Console.WriteLine(info.SynchronousIo);
-            Console.WriteLine(info.WriteToEndOfFile);
-            
+            Debug("Mounted");
 
             return NtStatus.Success;
             //throw new NotImplementedException();
@@ -404,7 +395,7 @@ namespace Terdos.WinNFS
 
         NtStatus IDokanOperations.MoveFile(string oldName, string newName, bool replace, DokanFileInfo info)
         {
-            Console.WriteLine("MoveFile");
+            Debug("MoveFile");
 
             oldName = CleanFileName(oldName);
 
@@ -433,7 +424,7 @@ namespace Terdos.WinNFS
 
         NtStatus IDokanOperations.ReadFile(string fileName, byte[] buffer, out int bytesRead, long offset, DokanFileInfo info)
         {
-            Console.WriteLine("ReadFile");
+            Debug("ReadFile");
 
             fileName = CleanFileName(fileName);
             bytesRead = 0;
@@ -470,7 +461,7 @@ namespace Terdos.WinNFS
 
         NtStatus IDokanOperations.SetAllocationSize(string fileName, long length, DokanFileInfo info)
         {
-            Console.WriteLine("SetAllocationSize");
+            Debug("SetAllocationSize");
 
             fileName = CleanFileName(fileName);
 
@@ -496,49 +487,49 @@ namespace Terdos.WinNFS
 
         NtStatus IDokanOperations.SetEndOfFile(string fileName, long length, DokanFileInfo info)
         {
-            Console.WriteLine("SetEndOfFile");
+            Debug("SetEndOfFile");
             return NtStatus.Success;
             //throw new NotImplementedException();
         }
 
         NtStatus IDokanOperations.SetFileAttributes(string fileName, FileAttributes attributes, DokanFileInfo info)
         {
-            Console.WriteLine("SetFileAttributes");
+            Debug("SetFileAttributes");
             return NtStatus.Success;
             //throw new NotImplementedException();
         }
 
         NtStatus IDokanOperations.SetFileSecurity(string fileName, FileSystemSecurity security, AccessControlSections sections, DokanFileInfo info)
         {
-            Console.WriteLine("SetFileSecurity");
+            Debug("SetFileSecurity");
             return NtStatus.Success;
             //throw new NotImplementedException();
         }
 
         NtStatus IDokanOperations.SetFileTime(string fileName, DateTime? creationTime, DateTime? lastAccessTime, DateTime? lastWriteTime, DokanFileInfo info)
         {
-            Console.WriteLine("SetFileTime");
+            Debug("SetFileTime");
             return NtStatus.Success;
             //throw new NotImplementedException();
         }
 
         NtStatus IDokanOperations.UnlockFile(string fileName, long offset, long length, DokanFileInfo info)
         {
-            Console.WriteLine("UnlockFile");
+            Debug("UnlockFile");
             return NtStatus.Success;
             //throw new NotImplementedException();
         }
 
         NtStatus IDokanOperations.Unmounted(DokanFileInfo info)
         {
-            Console.WriteLine("Unmounted");
+            Debug("Unmounted");
             return NtStatus.Success;
             //throw new NotImplementedException();
         }
 
         NtStatus IDokanOperations.WriteFile(string fileName, byte[] buffer, out int bytesWritten, long offset, DokanFileInfo info)
         {
-            Console.WriteLine("WriteFile");
+            Debug("WriteFile");
 
             bytesWritten = 0;
 

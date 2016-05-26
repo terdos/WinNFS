@@ -12,7 +12,7 @@ namespace WinNFS
         {
             try
             {
-                Terdos.WinNFS.NFSProxy proxy = new Terdos.WinNFS.NFSProxy(new System.Net.IPAddress(new byte[] { 192, 168, 1, 34 }));
+                Terdos.WinNFS.NFSProxy proxy = new Terdos.WinNFS.NFSProxy(new System.Net.IPAddress(new byte[] { 192, 168, 0, 110 }));
                 foreach (String device in proxy.GetExportedDevices())
                 {
                     Console.WriteLine(device);
