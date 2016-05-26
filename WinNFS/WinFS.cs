@@ -76,7 +76,7 @@ namespace Terdos.WinNFS
         public NFSProxy(System.Net.IPAddress address)
         {
             nfsClient = new NFSClient(NFSClient.NFSVersion.v3);
-            nfsClient.Connect(address, 1000,1000,600000);
+            nfsClient.Connect(address, 1001,1001,600000);
         }
 
         public List<String> GetExportedDevices()
@@ -202,15 +202,55 @@ namespace Terdos.WinNFS
         NtStatus IDokanOperations.DeleteDirectory(string fileName, DokanFileInfo info)
         {
             Console.WriteLine("DeleteDirectory");
-            return NtStatus.Success;
-            //throw new NotImplementedException();
+
+            fileName = CleanFileName(fileName);
+
+            try
+            {
+                Debug("DeleteDirectory {0}", fileName);
+                string Directory = nfsClient.GetDirectoryName(fileName);
+                string FileName = nfsClient.GetFileName(fileName);
+                string FullPath = nfsClient.Combine(FileName, Directory);
+
+                nfsClient.DeleteDirectory(FullPath);
+            }
+            catch (Exception ex)
+            {
+                Debug("DeleteDirectory file {0} exception {1}", fileName, ex.Message);
+                return Trace("DeleteDirectory", fileName, info, DokanResult.Error);
+            }
+            return Trace("DeleteDirectory", fileName, info, DokanResult.Success);
         }
 
         NtStatus IDokanOperations.DeleteFile(string fileName, DokanFileInfo info)
         {
             Console.WriteLine("DeleteFile");
-            return NtStatus.Success;
-            //throw new NotImplementedException();
+
+            fileName = CleanFileName(fileName);
+
+            try
+            {
+                Debug("DeleteFile {0}", fileName);
+                string Directory = nfsClient.GetDirectoryName(fileName);
+                string FileName = nfsClient.GetFileName(fileName);
+                string FullPath = nfsClient.Combine(FileName, Directory);
+
+                if (nfsClient.FileExists(FullPath))
+                {
+                    nfsClient.DeleteFile(FullPath);
+                }
+                else
+                {
+                    return Trace("DeleteFile", fileName, info, DokanResult.FileNotFound);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug("DeleteFile file {0} exception {1}", fileName, ex.Message);
+                return Trace("DeleteFile", fileName, info, DokanResult.Error);
+            }
+
+            return Trace("DeleteFile", fileName, info, DokanResult.Success);
         }
 
         NtStatus IDokanOperations.FindFiles(string fileName, out IList<FileInformation> files, DokanFileInfo info)
@@ -272,11 +312,10 @@ namespace Terdos.WinNFS
         NtStatus IDokanOperations.GetDiskFreeSpace(out long freeBytesAvailable, out long totalNumberOfBytes, out long totalNumberOfFreeBytes, DokanFileInfo info)
         {
             Console.WriteLine("GetDiskFreeSpace");
-            freeBytesAvailable = 1024 * 1024;
-            totalNumberOfBytes = 1024 * 1024;
-            totalNumberOfFreeBytes = 1024 * 1024;
+            freeBytesAvailable = 1024L * 1024 * 1024 * 10;
+            totalNumberOfBytes = 1024L * 1024 * 1024 * 20;
+            totalNumberOfFreeBytes = 1024L * 1024 * 1024 * 10;
             return NtStatus.Success;
-            //throw new NotImplementedException();
         }
 
         NtStatus IDokanOperations.GetFileInformation(string fileName, out FileInformation fileInfo, DokanFileInfo info)
@@ -366,24 +405,93 @@ namespace Terdos.WinNFS
         NtStatus IDokanOperations.MoveFile(string oldName, string newName, bool replace, DokanFileInfo info)
         {
             Console.WriteLine("MoveFile");
-            return NtStatus.Success;
-            //throw new NotImplementedException();
 
+            oldName = CleanFileName(oldName);
+
+            try
+            {
+                Debug("MoveFile {0}", oldName);
+
+                if (nfsClient.IsDirectory(newName))
+                {
+                    newName = nfsClient.Combine(
+                                    nfsClient.GetFileName(oldName),
+                                    newName
+                                );
+                }
+
+                nfsClient.Move(oldName, newName);
+            }
+            catch (Exception ex)
+            {
+                Debug("MoveFile file {0} newfile {1} exception {2}", oldName, newName, ex.Message);
+                return Trace("MoveFile", oldName, info, DokanResult.Error, newName, replace.ToString(CultureInfo.InvariantCulture));
+            }
+
+            return Trace("MoveFile", oldName, info, DokanResult.Success, newName, replace.ToString(CultureInfo.InvariantCulture));
         }
 
         NtStatus IDokanOperations.ReadFile(string fileName, byte[] buffer, out int bytesRead, long offset, DokanFileInfo info)
         {
             Console.WriteLine("ReadFile");
+
+            fileName = CleanFileName(fileName);
             bytesRead = 0;
-            return NtStatus.Success;
-            //throw new NotImplementedException();
+
+            if (nfsClient.IsDirectory(fileName))
+                return Trace("ReadFile", fileName, info, DokanResult.Success, "out: 0 ");
+
+            try
+            {
+                Debug("ReadFile {0}", fileName);
+                string Directory = nfsClient.GetDirectoryName(fileName);
+                string FileName = nfsClient.GetFileName(fileName);
+                string FullPath = nfsClient.Combine(FileName, Directory);
+
+                Debug("ReadFile {0} {1} {2} {3}", Directory, FileName, offset, buffer.Length);
+                long Bytes = (long)buffer.Length;
+                nfsClient.Read(FullPath, (long)offset, ref Bytes, ref buffer);
+                if (Bytes != -1)
+                {
+                    bytesRead = (int)Bytes;
+                    Debug("ReadFile bytes {0}", bytesRead);
+                }
+                else
+                    return Trace("ReadFile", fileName, info, DokanResult.Error, "out: 0");
+            }
+            catch (Exception ex)
+            {
+                Debug("ReadFile file {0} exception {1}", fileName, ex.Message);
+                return Trace("ReadFile", fileName, info, DokanResult.Error, "out: 0");
+            }
+
+            return Trace("ReadFile", fileName, info, DokanResult.Success, "out " + bytesRead.ToString(), offset.ToString(CultureInfo.InvariantCulture));
         }
 
         NtStatus IDokanOperations.SetAllocationSize(string fileName, long length, DokanFileInfo info)
         {
             Console.WriteLine("SetAllocationSize");
-            return NtStatus.Success;
-            //throw new NotImplementedException();
+
+            fileName = CleanFileName(fileName);
+
+            try
+            {
+                Debug("SetEndOfFile {0}", fileName);
+                string Directory = nfsClient.GetDirectoryName(fileName);
+                string FileName = nfsClient.GetFileName(fileName);
+                string FullName = nfsClient.Combine(FileName, Directory);
+
+                NFSLibrary.Protocols.Commons.NFSAttributes attr = nfsClient.GetItemAttributes(FullName);
+                if (attr.Size < length)
+                    nfsClient.SetFileSize(FullName, length);
+            }
+            catch (Exception ex)
+            {
+                Debug("SetEndOfFile file {0} newfile {1} exception {2}", fileName, ex.Message);
+                return Trace("SetAllocationSize", fileName, info, DokanResult.Error, length.ToString(CultureInfo.InvariantCulture));
+            }
+
+            return Trace("SetAllocationSize", fileName, info, DokanResult.Success, length.ToString(CultureInfo.InvariantCulture));
         }
 
         NtStatus IDokanOperations.SetEndOfFile(string fileName, long length, DokanFileInfo info)
@@ -431,9 +539,35 @@ namespace Terdos.WinNFS
         NtStatus IDokanOperations.WriteFile(string fileName, byte[] buffer, out int bytesWritten, long offset, DokanFileInfo info)
         {
             Console.WriteLine("WriteFile");
+
             bytesWritten = 0;
-            return NtStatus.Success;
-            //throw new NotImplementedException();
+
+
+            fileName = CleanFileName(fileName);
+
+            try
+            {
+                Debug("WriteFile {0}", fileName);
+                string Directory = nfsClient.GetDirectoryName(fileName);
+                string FileName = nfsClient.GetFileName(fileName);
+                string FullPath = nfsClient.Combine(FileName, Directory);
+
+                Debug("WriteFile {0} {1} {2} {3}", Directory, FileName, offset, buffer.Length);
+                UInt32 Bytes = 0;
+                nfsClient.Write(FullPath, (long)offset, (uint)buffer.Length, buffer, out Bytes);
+                if (Bytes != 0)
+                {
+                    bytesWritten = (int)Bytes;
+                    Debug("WriteFile bytes {0}", bytesWritten);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug("WriteFile file {0} exception {1}", fileName, ex.Message);
+                return Trace("WriteFile", fileName, info, DokanResult.Error, "out " + bytesWritten.ToString(), offset.ToString(CultureInfo.InvariantCulture));
+            }
+
+            return Trace("WriteFile", fileName, info, DokanResult.Success, "out " + bytesWritten.ToString(), offset.ToString(CultureInfo.InvariantCulture));
         }
     }
 }
